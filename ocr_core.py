@@ -4,7 +4,6 @@ import threading
 import queue
 import warnings
 warnings.filterwarnings("ignore")
-os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "0"
 
 import urllib.request
 import urllib.parse
@@ -18,7 +17,7 @@ _task_queue = queue.Queue()
 def get_reader():
     global _reader
     if _reader is None:
-        _reader = easyocr.Reader(["en"], verbose=False)
+        _reader = easyocr.Reader(["en"], gpu=True, verbose=False)
     return _reader
 
 def _worker():
