@@ -1,7 +1,10 @@
 import os
 import tempfile
+import threading
+import queue
 import warnings
 warnings.filterwarnings("ignore")
+os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "0"
 
 import urllib.request
 import urllib.parse
@@ -10,12 +13,25 @@ from PIL import Image, ImageEnhance, ImageOps
 import easyocr
 
 _reader = None
+_task_queue = queue.Queue()
 
 def get_reader():
     global _reader
     if _reader is None:
         _reader = easyocr.Reader(["en"], verbose=False)
     return _reader
+
+def _worker():
+    while True:
+        image_path, result_holder, event = _task_queue.get()
+        try:
+            result_holder["result"] = _run(image_path)
+        except Exception as e:
+            result_holder["error"] = e
+        finally:
+            event.set()
+
+threading.Thread(target=_worker, daemon=True).start()
 
 def resolve_reddit_url(url):
     if "reddit.com/media" in url:
@@ -51,7 +67,7 @@ def make_variants(src_path):
         "contrast_inv": save(contrast_inv, "contrast_inv"),
     }
 
-def run_easyocr(image_path):
+def _run(image_path):
     downloaded = None
     if image_path.startswith("http://") or image_path.startswith("https://"):
         image_path = download_url(image_path)
@@ -80,3 +96,12 @@ def run_easyocr(image_path):
     while len(lines) < 3:
         lines.append("")
     return lines
+
+def run_easyocr(image_path):
+    result_holder = {}
+    event = threading.Event()
+    _task_queue.put((image_path, result_holder, event))
+    event.wait()
+    if "error" in result_holder:
+        raise result_holder["error"]
+    return result_holder["result"]
